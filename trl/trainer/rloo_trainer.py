@@ -53,7 +53,7 @@ from ..trainer.utils import (
     exact_div,
     first_true_indices,
     forward,
-    get_reward,
+    get_reward_custom,
     prepare_deepspeed,
     print_rich_table,
     truncate_response,
@@ -345,7 +345,7 @@ class RLOOTrainer(Trainer):
                     # Response Processing 2. run reward model on the truncated responses
                     postprocessed_query_response = torch.cat((query, postprocessed_response), 1)
                     sequence_length = first_true_indices(postprocessed_response == processing_class.pad_token_id) - 1
-                    _, score, _ = get_reward(
+                    _, score, _ = get_reward_custom(
                         reward_model, postprocessed_query_response, processing_class.pad_token_id, context_length
                     )
 
@@ -535,7 +535,7 @@ class RLOOTrainer(Trainer):
                     )
 
                     postprocessed_query_response = torch.cat((query, postprocessed_response), 1)
-                    _, score, _ = get_reward(
+                    _, score, _ = get_reward_custom(
                         self.reward_model, postprocessed_query_response, processing_class.pad_token_id, context_length
                     )
                     table["score"].extend(self.accelerator.gather(score).float().cpu().numpy())
