@@ -43,6 +43,7 @@ from transformers import (
     TrainerState,
     TrainingArguments,
     is_comet_available,
+    AutoTokenizer,
 )
 from transformers.utils import (
     is_peft_available,
@@ -1099,7 +1100,7 @@ def get_reward(
 
 
 def get_reward_custom(
-    model: torch.nn.Module, query_responses: torch.Tensor, pad_token_id: int, context_length: int
+    model: torch.nn.Module, tokenizer: AutoTokenizer, query_responses: list[str], pad_token_id: int, context_length: int
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """
     Computes the reward logits and the rewards for a given model and query responses.
@@ -1123,11 +1124,25 @@ def get_reward_custom(
             - `sequence_lengths` (`torch.Tensor`):
                 The lengths of the sequences in the query responses.
     """
-    attention_mask = query_responses != pad_token_id
+    # attention_mask = query_responses != pad_token_id
     # position_ids = attention_mask.cumsum(1) - attention_mask.long()  # exclusive cumsum
     # lm_backbone = getattr(model, model.base_model_prefix)
-    input_ids = torch.masked_fill(query_responses, ~attention_mask, 0)
-    output = model(input_ids)
+    score_list = []
+    for query_response in query_responses:
+        conversation = []
+        conversation.append({"content": query_response, "role":"user"}) # in their case, the query_response is the user's response
+        conversation.append({"content":"+","role":"assistant"})
+
+        input_ids = tokenizer.apply_chat_template(conversation,return_tensors="pt").to(model.device)
+
+        plus_tag_id = tokenizer.encode('+')[-1]
+        minus_tag_id = tokenizer.encode('-')[-1]
+        candidate_tokens = [plus_tag_id,minus_tag_id]
+
+        logits = model(input_ids).logits[:,-3,candidate_tokens] #simple version for llama3.1-instruct, the +/- is predicted by the '-3' position
+        scores = logits.softmax(dim=-1)[:,0] # 0 means the prob of + (1 mean -)
+
+        score_list.append(scores[0])
     # output = lm_backbone(
     #     input_ids=input_ids,
     #     attention_mask=attention_mask,
@@ -1137,11 +1152,11 @@ def get_reward_custom(
     #     use_cache=False,  # otherwise mistral-based RM would error out
     # )
     # reward_logits = model.score(output.hidden_states[-1])
-    sequence_lengths = first_true_indices(query_responses[:, context_length:] == pad_token_id) - 1 + context_length
+    # sequence_lengths = first_true_indices(query_responses[:, context_length:] == pad_token_id) - 1 + context_length
     # https://github.com/huggingface/transformers/blob/dc68a39c8111217683bf49a4912d0c9018bab33d/src/transformers/models/gpt2/modeling_gpt2.py#L1454
     return (
         None,
-        output.score,
+        torch.tensor(score_list),
         None,
     )
 

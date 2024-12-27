@@ -60,7 +60,7 @@ from ..trainer.utils import (
 )
 from .rloo_config import RLOOConfig
 from .utils import generate_model_card, get_comet_experiment_url, log_table_to_comet_experiment
-
+from transformers import AutoTokenizer
 
 if is_wandb_available():
     import wandb
@@ -79,7 +79,9 @@ class RLOOTrainer(Trainer):
         ],
         policy: nn.Module,
         ref_policy: nn.Module,
+        tokenizer: AutoTokenizer,
         reward_model: nn.Module,
+        reward_tokenizer: AutoTokenizer,
         train_dataset: Dataset,
         data_collator: Optional[DataCollatorWithPadding] = None,
         eval_dataset: Optional[Union[Dataset, dict[str, Dataset]]] = None,
@@ -108,7 +110,9 @@ class RLOOTrainer(Trainer):
         self.policy.generation_config.pad_token_id = None  # generate tokens without truncation / padding
 
         self.ref_policy = ref_policy
+        self.tokenizer = tokenizer
         self.reward_model = reward_model
+        self.reward_tokenizer = reward_tokenizer
         self.train_dataset = train_dataset
         self.train_dataset_len = len(train_dataset)
         self.data_collator = data_collator
@@ -243,7 +247,9 @@ class RLOOTrainer(Trainer):
         model = self.model
         self.model_wrapped = self.model
         ref_policy = self.ref_policy
+        tokenizer = self.tokenizer
         reward_model = self.reward_model
+        reward_tokenizer = self.reward_tokenizer
         processing_class = self.processing_class
         dataloader = self.dataloader
         device = accelerator.device
@@ -346,7 +352,7 @@ class RLOOTrainer(Trainer):
                     postprocessed_query_response = torch.cat((query, postprocessed_response), 1)
                     sequence_length = first_true_indices(postprocessed_response == processing_class.pad_token_id) - 1
                     _, score, _ = get_reward_custom(
-                        reward_model, postprocessed_query_response, processing_class.pad_token_id, context_length
+                        reward_model, reward_tokenizer, tokenizer.batch_decode(postprocessed_query_response), processing_class.pad_token_id, context_length
                     )
 
                     responses.append(response)
@@ -536,7 +542,7 @@ class RLOOTrainer(Trainer):
 
                     postprocessed_query_response = torch.cat((query, postprocessed_response), 1)
                     _, score, _ = get_reward_custom(
-                        self.reward_model, postprocessed_query_response, processing_class.pad_token_id, context_length
+                        self.reward_model, self.reward_tokenizer, self.tokenzier.batch_decode(postprocessed_query_response), processing_class.pad_token_id, context_length
                     )
                     table["score"].extend(self.accelerator.gather(score).float().cpu().numpy())
 
