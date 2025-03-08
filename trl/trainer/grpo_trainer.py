@@ -35,6 +35,7 @@ from transformers import (
     AutoModelForCausalLM,
     AutoModelForSequenceClassification,
     AutoTokenizer,
+    AutoConfig,
     GenerationConfig,
     PreTrainedModel,
     PreTrainedTokenizerBase,
@@ -58,6 +59,7 @@ from .utils import (
     print_prompt_completions_sample,
     selective_log_softmax,
 )
+import deepspeed
 
 
 if is_peft_available():
@@ -334,9 +336,12 @@ class GRPOTrainer(Trainer):
             reward_funcs = [reward_funcs]
         for i, reward_func in enumerate(reward_funcs):
             if isinstance(reward_func, str):
+                # ensure num_embedding == config.vocab_size
                 reward_funcs[i] = AutoModelForSequenceClassification.from_pretrained(
                     reward_func, num_labels=1, **model_init_kwargs
                 )
+                temp_config = AutoConfig.from_pretrained(reward_func)
+                reward_funcs[i].resize_token_embeddings(temp_config.vocab_size)
         self.reward_funcs = reward_funcs
 
         # Reward weights
@@ -838,7 +843,8 @@ class GRPOTrainer(Trainer):
                     )
                     reward_inputs = super()._prepare_inputs(reward_inputs)
                     with torch.inference_mode():
-                        rewards_per_func[:, i] = reward_func(**reward_inputs).logits[:, 0]  # Shape (B*G,)
+                        with deepspeed.zero.GatheredParameters(list(reward_func.parameters()), modifier_rank=0):
+                            rewards_per_func[:, i] = reward_func(**reward_inputs).logits[:, 0]  # Shape (B*G,)
                 else:
                     # Repeat all input columns (but "prompt" and "completion") to match the number of generations
                     keys = [key for key in inputs[0] if key not in ["prompt", "completion"]]
