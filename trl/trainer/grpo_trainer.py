@@ -21,6 +21,7 @@ from collections import defaultdict
 from typing import Any, Callable, Optional, Sized, Union
 from unittest.mock import patch
 
+import deepspeed
 import torch
 import torch.utils.data
 import transformers
@@ -32,10 +33,10 @@ from packaging import version
 from torch import nn
 from torch.utils.data import Sampler
 from transformers import (
+    AutoConfig,
     AutoModelForCausalLM,
     AutoModelForSequenceClassification,
     AutoTokenizer,
-    AutoConfig,
     GenerationConfig,
     PreTrainedModel,
     PreTrainedTokenizerBase,
@@ -59,7 +60,6 @@ from .utils import (
     print_prompt_completions_sample,
     selective_log_softmax,
 )
-import deepspeed
 
 
 if is_peft_available():
